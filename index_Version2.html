@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mandirra's Makeover — Mobile Billing</title>
+
+  <!-- Simple mobile-first styles, black & gold theme to match your logo -->
+  <style>
+    :root{
+      --gold: #b7862d;
+      --bg: #000;
+      --card-bg: #0b0b0b;
+      --text: #f6f1e9;
+      --muted: #bcb0a2;
+      --accent: #c79a36;
+      max-width: 720px;
+    }
+    html,body{
+      height:100%;
+      margin:0;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      background:var(--bg);
+      color:var(--text);
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+    }
+    .container{
+      padding:18px;
+      max-width:480px; /* mobile-first */
+      margin:0 auto;
+    }
+
+    header.app-header{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      margin-bottom:14px;
+    }
+    header.app-header img.logo {
+      width:64px;
+      height:64px;
+      object-fit:contain;
+      border-radius:8px;
+      background:transparent;
+    }
+    header h1{
+      font-size:18px;
+      margin:0;
+      color:var(--gold);
+      letter-spacing:0.6px;
+    }
+    header p.sub{
+      margin:0;
+      font-size:12px;
+      color:var(--muted);
+    }
+
+    form.card{
+      background:linear-gradient(180deg,#070707,#0c0c0c);
+      border-radius:10px;
+      padding:12px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+      border:1px solid rgba(200,160,60,0.06);
+    }
+
+    .field{
+      display:flex;
+      flex-direction:column;
+      margin-bottom:10px;
+    }
+    label{
+      font-size:12px;
+      color:var(--muted);
+      margin-bottom:6px;
+    }
+    input[type="text"], input[type="email"], input[type="date"], input[type="number"], select{
+      border-radius:8px;
+      padding:10px;
+      background:#0f0f0f;
+      color:var(--text);
+      border:1px solid rgba(255,255,255,0.03);
+      font-size:15px;
+      outline:none;
+    }
+    input[type="number"]::-webkit-inner-spin-button {opacity: 0.6;}
+
+    .row{
+      display:flex;
+      gap:8px;
+    }
+    .row .field{flex:1;}
+
+    .muted{
+      font-size:12px;
+      color:var(--muted);
+    }
+
+    .actions{
+      display:flex;
+      gap:10px;
+      margin-top:8px;
+      align-items:center;
+      justify-content:space-between;
+    }
+    button.primary{
+      background: linear-gradient(180deg,var(--accent),var(--gold));
+      color:#111;
+      font-weight:700;
+      padding:12px 16px;
+      border-radius:10px;
+      border:none;
+      box-shadow: 0 6px 18px rgba(183,134,45,0.15);
+      font-size:15px;
+    }
+    button.primary:disabled{opacity:0.5}
+
+    .preview{
+      margin-top:12px;
+      font-size:13px;
+      color:var(--muted);
+    }
+
+    /* PDF bill layout (the element we will render to PDF) */
+    #pdfContent{
+      width:794px; /*  A4 96dpi approx (we render at scale) - arbitrary large for clarity */
+      background:#fff;
+      color:#222;
+      padding:24px;
+      box-sizing:border-box;
+      border-radius:6px;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    .bill-header{
+      display:flex;
+      gap:16px;
+      align-items:center;
+      border-bottom:1px solid #eee;
+      padding-bottom:10px;
+      margin-bottom:10px;
+    }
+    .bill-header img{ width:86px; height:86px; object-fit:contain; }
+    .bill-title{
+      flex:1;
+      text-align:center;
+    }
+    .bill-title h2{ margin:0; font-size:20px; color:#a07a2b; }
+    .bill-title p{ margin:4px 0 0; color:#444; font-size:12px; }
+
+    .bill-body{ font-size:13px; color:#222; }
+    .bill-row{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      padding:6px 0;
+      border-bottom:1px dashed #eee;
+    }
+    .bill-row > div{ flex:1; min-width:0; }
+    .bill-row .label{ color:#777; font-size:12px; }
+    .bill-row .value{ color:#111; font-weight:600; }
+
+    .bill-totals{
+      margin-top:12px;
+      display:flex;
+      justify-content:flex-end;
+    }
+    .totals-table{
+      width:320px;
+      border-top:1px solid #ddd;
+      margin-left:12px;
+      padding-top:8px;
+      font-size:13px;
+    }
+    .totals-table .line{
+      display:flex;
+      justify-content:space-between;
+      padding:6px 0;
+    }
+    .totals-table .total{
+      font-weight:800;
+      color:#b06f1e;
+      font-size:16px;
+    }
+
+    .bill-footer{
+      margin-top:20px;
+      text-align:center;
+      color:#444;
+      font-size:12px;
+    }
+
+    /* Hide the pdf content from screen but keep accessible for generating PDF.
+       We will place it off-screen but visible for accessibility. */
+    .pdf-hidden{
+      display:none;
+    }
+
+    /* Make inputs larger on mobile for comfortable tapping */
+    @media (max-width:520px){
+      input,select{ font-size:17px; padding:12px;}
+      .container{ padding:14px;}
+    }
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="app-header">
+      <!-- Place your logo file (same directory) as "logo.png" or change the src -->
+      <img class="logo" src="logo.png" alt="Mandirra's Makeover logo (save as logo.png)" />
+      <div>
+        <h1>Mandirra's Makeover</h1>
+        <p class="sub">Unlock your true glamour — Billing</p>
+      </div>
+    </header>
+
+    <form id="billForm" class="card" onsubmit="return false;">
+      <!-- Mandatory fields are marked with * -->
+      <div class="field">
+        <label>Client Name *</label>
+        <input id="clientName" type="text" placeholder="e.g. Asha Kumar" required>
+      </div>
+
+      <div class="field">
+        <label>Client Address *</label>
+        <input id="clientAddress" type="text" placeholder="Client full address" required>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Client Number (mobile) *</label>
+          <input id="clientNumber" type="text" placeholder="e.g. +91 98xxxxxx" required>
+        </div>
+        <div class="field">
+          <label>Client Email (optional)</label>
+          <input id="clientEmail" type="email" placeholder="client@example.com">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Booking For *</label>
+          <input id="bookingFor" type="text" placeholder="e.g. Bridal Makeup" required>
+        </div>
+        <div class="field">
+          <label>Ceremony Date *</label>
+          <input id="ceremonyDate" type="date" required>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Number of Heads *</label>
+          <input id="numHeads" type="number" min="1" value="1" required>
+        </div>
+        <div class="field">
+          <label>Payment Type *</label>
+          <select id="paymentType" required>
+            <option value="">Select</option>
+            <option>Cash</option>
+            <option>UPI</option>
+            <option>Card</option>
+            <option>Bank Transfer</option>
+            <option>Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Total Amount (₹) *</label>
+          <input id="totalAmount" type="number" min="0" step="0.01" placeholder="0.00" required>
+        </div>
+        <div class="field">
+          <label>Booking Amount (₹) *</label>
+          <input id="bookingAmount" type="number" min="0" step="0.01" placeholder="0.00" required>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>Booking Amount Date *</label>
+          <input id="bookingDate" type="date" required>
+        </div>
+        <div class="field">
+          <label>Pending Amount (₹)</label>
+          <input id="pendingAmount" type="number" readonly>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>My Number (your mobile) *</label>
+          <input id="myNumber" type="text" placeholder="Your mobile" required>
+        </div>
+        <div class="field">
+          <label>My Email (your email) *</label>
+          <input id="myEmail" type="email" placeholder="you@example.com" required>
+        </div>
+      </div>
+
+      <div class="actions">
+        <p class="muted">All fields marked * are mandatory</p>
+        <div>
+          <button id="generateBtn" class="primary" type="button">Generate Bill (Create PDF)</button>
+        </div>
+      </div>
+
+      <p class="preview">Tip: This page is optimized for mobile. Save this HTML file and the logo (logo.png) in the same folder and open in your mobile browser.</p>
+    </form>
+
+    <!-- Hidden PDF content (we will fill this with user values and render) -->
+    <div id="pdfContent" class="pdf-hidden" aria-hidden="true">
+      <div class="bill-header">
+        <img id="pdfLogo" src="logo.png" alt="logo">
+        <div class="bill-title">
+          <h2>Mandirra's Makeover</h2>
+          <p id="pdfContactSmall">you@example.com • +91 9000000000</p>
+        </div>
+      </div>
+
+      <div class="bill-body">
+        <div style="margin-bottom:8px;">
+          <strong>Bill / Receipt</strong><br/>
+          <small class="muted">NOTE: This is a system generated bill</small>
+        </div>
+
+        <div class="bill-row">
+          <div>
+            <div class="label">Client Name</div>
+            <div id="b_clientName" class="value"></div>
+          </div>
+          <div>
+            <div class="label">Booking For</div>
+            <div id="b_bookingFor" class="value"></div>
+          </div>
+        </div>
+
+        <div class="bill-row">
+          <div>
+            <div class="label">Client Address</div>
+            <div id="b_clientAddress" class="value"></div>
+          </div>
+          <div>
+            <div class="label">Ceremony Date</div>
+            <div id="b_ceremonyDate" class="value"></div>
+          </div>
+        </div>
+
+        <div class="bill-row">
+          <div>
+            <div class="label">Client Number</div>
+            <div id="b_clientNumber" class="value"></div>
+          </div>
+          <div>
+            <div class="label">Client Email</div>
+            <div id="b_clientEmail" class="value"></div>
+          </div>
+        </div>
+
+        <div class="bill-row">
+          <div>
+            <div class="label">Number of Heads</div>
+            <div id="b_numHeads" class="value"></div>
+          </div>
+          <div>
+            <div class="label">Payment Type</div>
+            <div id="b_paymentType" class="value"></div>
+          </div>
+        </div>
+
+        <div class="bill-row">
+          <div>
+            <div class="label">Booking Amount Date</div>
+            <div id="b_bookingDate" class="value"></div>
+          </div>
+          <div>
+            <div class="label">Booking Amount (₹)</div>
+            <div id="b_bookingAmount" class="value"></div>
+          </div>
+        </div>
+
+        <div class="bill-totals">
+          <div class="totals-table">
+            <div class="line">
+              <div>Subtotal</div>
+              <div id="b_subtotal">₹0.00</div>
+            </div>
+            <div class="line">
+              <div>Booking Paid</div>
+              <div id="b_paid">₹0.00</div>
+            </div>
+            <div class="line" style="border-top:1px solid #ddd; padding-top:8px;">
+              <div class="total">Pending Amount</div>
+              <div id="b_pending" class="total">₹0.00</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bill-footer">
+          <p>Thank you from Mandirra's Makeover</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Libraries: html2canvas and jsPDF from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
+    integrity="sha512-BNa5m8m4irv6vH3o4YQq9FV6G15y3w0j6c8x6+fXgYp4D7J+G9/tb4HeTA7h0jT0h9U6nR2zZk2Q2Z9Gm77h3Q=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+    integrity="sha512-5+1b8c4G4qXz8Kx7rJwYdXx8fOaKj+1o4Uz7k5b9y3fV2q6nF8rV1s9q6y4zB0dN1R7xq3m5T1t9V2l3Qm4w=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+  <script>
+    (function(){
+      const $ = id => document.getElementById(id);
+
+      const clientName = $('clientName');
+      const clientAddress = $('clientAddress');
+      const clientNumber = $('clientNumber');
+      const clientEmail = $('clientEmail');
+      const bookingFor = $('bookingFor');
+      const ceremonyDate = $('ceremonyDate');
+      const numHeads = $('numHeads');
+      const totalAmount = $('totalAmount');
+      const bookingAmount = $('bookingAmount');
+      const bookingDate = $('bookingDate');
+      const pendingAmount = $('pendingAmount');
+      const myNumber = $('myNumber');
+      const myEmail = $('myEmail');
+      const paymentType = $('paymentType');
+
+      // Auto compute pending = total - booking
+      function computePending(){
+        const total = parseFloat(totalAmount.value) || 0;
+        const booking = parseFloat(bookingAmount.value) || 0;
+        const pending = Math.max(0, total - booking);
+        pendingAmount.value = pending.toFixed(2);
+      }
+
+      totalAmount.addEventListener('input', computePending);
+      bookingAmount.addEventListener('input', computePending);
+
+      // Form validation check
+      function validateForm(){
+        const required = [
+          clientName, clientAddress, clientNumber, bookingFor,
+          ceremonyDate, numHeads, totalAmount, bookingAmount,
+          bookingDate, paymentType, myNumber, myEmail
+        ];
+        for (const el of required){
+          if(!el.value || el.value.trim() === ''){
+            return false;
+          }
+        }
+        // numeric checks
+        const tot = parseFloat(totalAmount.value);
+        const book = parseFloat(bookingAmount.value);
+        if (isNaN(tot) || isNaN(book) || tot < 0 || book < 0) return false;
+        if (book > tot) {
+          // allow but show an alert later; still consider valid
+        }
+        return true;
+      }
+
+      // Fill the PDF content area with values
+      function populatePdfContent(){
+        $('b_clientName').textContent = clientName.value;
+        $('b_clientAddress').textContent = clientAddress.value;
+        $('b_clientNumber').textContent = clientNumber.value;
+        $('b_clientEmail').textContent = clientEmail.value || '-';
+        $('b_bookingFor').textContent = bookingFor.value;
+        $('b_ceremonyDate').textContent = ceremonyDate.value;
+        $('b_numHeads').textContent = numHeads.value;
+        $('b_paymentType').textContent = paymentType.value;
+        $('b_bookingDate').textContent = bookingDate.value;
+        $('b_bookingAmount').textContent = '₹' + (parseFloat(bookingAmount.value || 0)).toFixed(2);
+        const total = parseFloat(totalAmount.value || 0);
+        $('b_subtotal').textContent = '₹' + total.toFixed(2);
+        $('b_paid').textContent = '₹' + (parseFloat(bookingAmount.value || 0)).toFixed(2);
+        const pending = Math.max(0, total - (parseFloat(bookingAmount.value || 0)));
+        $('b_pending').textContent = '₹' + pending.toFixed(2);
+
+        // header contact small
+        $('pdfContactSmall').textContent = (myEmail.value || '') + ' • ' + (myNumber.value || '');
+      }
+
+      // Generate PDF using html2canvas + jsPDF
+      async function generatePDF(){
+        if (!validateForm()){
+          alert('Please fill all mandatory fields (*) correctly before generating the bill.');
+          return;
+        }
+
+        // Populate content
+        populatePdfContent();
+
+        // Make pdf content visible temporarily to capture
+        const pdfElement = $('pdfContent');
+        pdfElement.classList.remove('pdf-hidden');
+        pdfElement.style.display = 'block'; // ensure visible for canvas
+        // we will attach it to body if necessary (it is already in DOM)
+
+        // Use html2canvas with scale for better quality
+        const scale = 2; // increase for better resolution
+        try {
+          const canvas = await html2canvas(pdfElement, {
+            scale: scale,
+            backgroundColor: '#ffffff',
+            useCORS: true,
+            allowTaint: true,
+            logging: false
+          });
+
+          // Create PDF from canvas
+          const imgData = canvas.toDataURL('image/png');
+          const { jsPDF } = window.jspdf;
+
+          // A4 in mm
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = pdf.internal.pageSize.getHeight();
+
+          // calculate image dims to fit A4 with margin
+          const margin = 10;
+          const imgProps = pdf.getImageProperties(imgData);
+          const imgWidthPx = imgProps.width;
+          const imgHeightPx = imgProps.height;
+          const pxPerMm = imgWidthPx / (pageWidth - margin * 2);
+          const imgWidthMm = imgWidthPx / pxPerMm;
+          const imgHeightMm = imgHeightPx / pxPerMm;
+
+          // If it overflows height, scale down
+          let finalWidth = imgWidthMm;
+          let finalHeight = imgHeightMm;
+          if (finalHeight > (pageHeight - margin * 2)) {
+            const ratio = (pageHeight - margin * 2) / finalHeight;
+            finalHeight = finalHeight * ratio;
+            finalWidth = finalWidth * ratio;
+          }
+
+          pdf.addImage(imgData, 'PNG', margin, margin, finalWidth, finalHeight);
+          // filename
+          const fileName = (clientName.value || 'bill') + '_mandirras_makeover_' + (new Date()).toISOString().slice(0,10) + '.pdf';
+          pdf.save(fileName);
+        } catch (err){
+          console.error(err);
+          alert('An error occurred while generating the PDF. See console for details.');
+        } finally {
+          // hide pdf element again
+          pdfElement.style.display = 'none';
+          pdfElement.classList.add('pdf-hidden');
+        }
+      }
+
+      // Bind generate button
+      $('generateBtn').addEventListener('click', generatePDF);
+
+      // live compute & validations
+      computePending();
+    })();
+  </script>
+</body>
+</html>
